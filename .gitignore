@@ -36,3 +36,13 @@ build/
 .DS_Store
 .env
 *.log
+
+### macOS y archivos locales ###
+.DS_Store
+.env
+*.log
+
+### macOS y archivos locales ###
+.DS_Store
+.env
+*.log
