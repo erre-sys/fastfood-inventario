@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+# Permisos mínimos: el workflow solo lee el repo, salvo donde un job pida más.
+permissions:
+  contents: read
+
+# Un push nuevo al mismo PR cancela la ejecución anterior.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SONAR_MAVEN_VERSION: 5.9.0.7382
+  TRIVY_IMAGE: aquasec/trivy:0.76.2
+  GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks:v8.30.1
+
+jobs:
+  compilar-y-probar:
+    name: compilar-y-probar
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # Sonar usa el historial para saber qué código es nuevo
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version-file: .java-version
+          cache: maven
+      - name: Compilar, probar y verificar (ArchUnit, Spotless, JaCoCo)
+        run: ./mvnw -B -ntp verify
+      - name: Análisis de SonarCloud (con quality gate)
+        # Los PR desde forks y de Dependabot no reciben secretos: ahí se omite.
+        if: github.actor != 'dependabot[bot]' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: ./mvnw -B -ntp org.sonarsource.scanner.maven:sonar-maven-plugin:${SONAR_MAVEN_VERSION}:sonar -Dsonar.qualitygate.wait=true
+
+  secretos:
+    name: secretos
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # gitleaks revisa todo el historial
+      - name: gitleaks (CLI; la acción oficial exige licencia en organizaciones)
+        run: docker run --rm -v "$PWD:/repo" "$GITLEAKS_IMAGE" git /repo --redact --verbose
+
+  dependencias:
+    name: dependencias
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Trivy sobre las dependencias de Maven
+        run: docker run --rm -v "$PWD:/repo" "$TRIVY_IMAGE" fs --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 /repo
+
+  titulo-pr:
+    name: titulo-pr
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+    steps:
+      # Con squash, el título del PR es el commit que queda en develop.
+      - uses: amannn/action-semantic-pull-request@2252a14e810aa9b85c2d560bd7070c802206ecf6 # v6.1.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  ramas:
+    name: ramas
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Validar Gitflow
+        # El nombre de la rama lo elige quien abre el PR: va por variable de entorno,
+        # nunca interpolado en el script, para evitar inyección de comandos.
+        env:
+          RAMA: ${{ github.head_ref }}
+          DESTINO: ${{ github.base_ref }}
+        run: |
+          echo "PR de '$RAMA' hacia '$DESTINO'"
+          case "$DESTINO" in
+            main)    patron='^(release|hotfix)/[a-z0-9._-]+$' ;;
+            develop) patron='^(feature|bugfix|release|hotfix)/[a-z0-9._-]+$|^dependabot/' ;;
+            *)       echo "Destino no permitido: $DESTINO"; exit 1 ;;
+          esac
+          if [[ "$RAMA" =~ $patron ]]; then
+            echo "Rama válida para $DESTINO"
+          else
+            echo "::error::La rama '$RAMA' no puede ir a '$DESTINO'. Esperado: $patron"
+            exit 1
+          fi
