@@ -8,8 +8,8 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * Salud abierta para Kubernetes; todo lo demás exige un token de Keycloak (realm erre). API sin
- * sesiones: cada petición trae su token, así que no aplica CSRF.
+ * Salud abierta para Kubernetes; el resto de rutas exige un token de Keycloak (realm erre). API sin
+ * sesiones: cada petición trae su token en la cabecera Authorization, así que no aplica CSRF.
  */
 @Configuration
 class SeguridadConfig {
