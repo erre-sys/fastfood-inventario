@@ -15,7 +15,7 @@ import org.springframework.security.web.SecurityFilterChain;
 class SeguridadConfig {
 
     @Bean
-    SecurityFilterChain filtros(HttpSecurity http) throws Exception {
+    SecurityFilterChain filtros(HttpSecurity http) {
         http.authorizeHttpRequests(peticiones ->
                         peticiones
                                 .requestMatchers("/actuator/health/**", "/actuator/info")
