@@ -122,7 +122,9 @@ jobs:
             --label org.opencontainers.image.licenses="AGPL-3.0-only" \
             -t "$IMAGEN:$TAG" .
       - name: Tamaño de la imagen
-        run: docker image inspect "$IMAGEN:$TAG" --format 'Tamaño real: {{.Size}} bytes' && docker history "$IMAGEN:$TAG" --format '{{.Size}}\t{{.CreatedBy}}' | head -12
+        run: |
+          docker image inspect "$IMAGEN:$TAG" --format 'Tamaño real: {{.Size}} bytes'
+          docker history "$IMAGEN:$TAG" --format '{{.Size}}\t{{.CreatedBy}}' | head -12
       - name: Trivy sobre la imagen (no se publica si hay vulnerabilidades altas o críticas corregibles)
         run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "$IMAGEN:$TAG"
       - name: Publicar en GHCR
