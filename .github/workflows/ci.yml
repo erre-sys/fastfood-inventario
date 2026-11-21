@@ -96,3 +96,45 @@ jobs:
             echo "::error::La rama '$RAMA' no puede ir a '$DESTINO'. Esperado: $patron"
             exit 1
           fi
+
+  publicar-imagen:
+    name: publicar-imagen
+    # Solo al llegar a develop o main, y solo si pasaron las pruebas y los escaneos.
+    if: github.event_name == 'push'
+    needs: [compilar-y-probar, secretos, dependencias]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write      # publicar en GHCR
+      id-token: write      # firmar la atestación de origen
+      attestations: write
+    env:
+      IMAGEN: ghcr.io/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Construir
+        run: |
+          TAG="sha-${GITHUB_SHA::7}"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          docker build \
+            --label org.opencontainers.image.source="https://github.com/$GITHUB_REPOSITORY" \
+            --label org.opencontainers.image.revision="$GITHUB_SHA" \
+            --label org.opencontainers.image.licenses="AGPL-3.0-only" \
+            -t "$IMAGEN:$TAG" .
+      - name: Tamaño de la imagen
+        run: docker image inspect "$IMAGEN:$TAG" --format 'Tamaño real: {{.Size}} bytes' && docker history "$IMAGEN:$TAG" --format '{{.Size}}\t{{.CreatedBy}}' | head -12
+      - name: Trivy sobre la imagen (no se publica si hay vulnerabilidades altas o críticas corregibles)
+        run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "$IMAGEN:$TAG"
+      - name: Publicar en GHCR
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "$IMAGEN:$TAG"
+          echo "DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGEN:$TAG" | cut -d@ -f2)" >> "$GITHUB_ENV"
+      - name: Atestación de origen (quién y desde qué commit se construyó)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGEN }}
+          subject-digest: ${{ env.DIGEST }}
+          push-to-registry: true

@@ -25,3 +25,14 @@ updates:
       timezone: America/Guayaquil
     commit-message:
       prefix: "ci(deps)"
+
+  - package-ecosystem: docker
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: America/Guayaquil
+    commit-message:
+      prefix: "build(deps)"
