@@ -169,7 +169,7 @@ jobs:
         id: token
         uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
-          app-id: ${{ vars.DESPLIEGUE_APP_ID }}
+          client-id: ${{ vars.DESPLIEGUE_APP_CLIENT_ID }}
           private-key: ${{ secrets.DESPLIEGUE_APP_KEY }}
           owner: erre-sys
           repositories: fastfood-deploy
