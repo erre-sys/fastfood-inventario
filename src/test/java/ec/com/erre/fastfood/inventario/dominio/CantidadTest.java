@@ -57,7 +57,9 @@ class CantidadTest {
 
     @Test
     void noAdmiteCantidadesNegativas() {
-        assertThatThrownBy(() -> new Cantidad(bd("-1"), KILO))
+        var negativo = bd("-1");
+
+        assertThatThrownBy(() -> new Cantidad(negativo, KILO))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
