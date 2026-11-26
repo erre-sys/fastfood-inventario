@@ -149,3 +149,66 @@ jobs:
           subject-name: ${{ env.IMAGEN }}
           subject-digest: ${{ env.DIGEST }}
           push-to-registry: true
+
+  proponer-despliegue:
+    name: proponer-despliegue
+    # Solo en develop, en el repo de la organización, después de publicar la imagen.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop' && github.repository_owner == 'erre-sys'
+    needs: [publicar-imagen]
+    runs-on: ubuntu-24.04
+    # El entorno dev solo acepta la rama develop, y es el único que tiene la llave de la App.
+    # Para exigir aprobación humana en el futuro: Settings → Environments → dev → Required reviewers.
+    environment: dev
+    permissions:
+      contents: read
+    env:
+      SERVICIO: inventario
+      NEGOCIO: erre-dev
+    steps:
+      - name: Token temporal de la App (1 hora, solo fastfood-deploy)
+        id: token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          app-id: ${{ vars.DESPLIEGUE_APP_ID }}
+          private-key: ${{ secrets.DESPLIEGUE_APP_KEY }}
+          owner: erre-sys
+          repositories: fastfood-deploy
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: erre-sys/fastfood-deploy
+          token: ${{ steps.token.outputs.token }}
+          path: deploy
+      - name: Cambiar la etiqueta, abrir el PR y mergearlo
+        working-directory: deploy
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          TAG="sha-${GITHUB_SHA::7}"
+          ARCHIVO="workloads/negocio/$NEGOCIO/$SERVICIO/values.yaml"
+          RAMA="despliegue/$NEGOCIO-$SERVICIO-$TAG"
+
+          sed -i -E "s/^(  etiqueta: ).*/\1$TAG/" "$ARCHIVO"
+          if git diff --quiet; then
+            echo "La etiqueta $TAG ya está desplegada"
+            exit 0
+          fi
+
+          # Resguardo: el único cambio permitido es una línea de etiqueta.
+          CAMBIOS=$(git diff --numstat | awk '{a+=$1; d+=$2} END {print a" "d}')
+          if [ "$CAMBIOS" != "1 1" ] || ! git diff -U0 | grep -qE '^\+  etiqueta: sha-[0-9a-f]{7}$'; then
+            echo "::error::El cambio no es solo la etiqueta; no se mergea"
+            git diff
+            exit 1
+          fi
+
+          git config user.name "erre-despliegue[bot]"
+          git config user.email "erre-despliegue[bot]@users.noreply.github.com"
+          git switch -c "$RAMA"
+          git commit -am "deploy($NEGOCIO): $SERVICIO $TAG"
+          git push origin "$RAMA"
+
+          URL=$(gh pr create --base main --head "$RAMA" \
+            --title "deploy($NEGOCIO): $SERVICIO $TAG" \
+            --body "Imagen \`ghcr.io/$GITHUB_REPOSITORY:$TAG\`, construida desde $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA. Ejecución: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")
+          gh pr merge "$URL" --squash --delete-branch
+          echo "Desplegado: $URL"
