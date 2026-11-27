@@ -9,7 +9,8 @@ import org.springframework.security.web.SecurityFilterChain;
 
 /**
  * Health is open for Kubernetes; everything else requires a Keycloak token (realm erre). Stateless
- * API: every request carries its own token, so CSRF does not apply.
+ * API. CSRF stays on: Spring skips it for requests carrying a bearer token and keeps protecting any
+ * request that could rely on cookies.
  */
 @Configuration
 class SecurityConfig {
@@ -23,8 +24,7 @@ class SecurityConfig {
                                 .authenticated())
                 .oauth2ResourceServer(server -> server.jwt(Customizer.withDefaults()))
                 .sessionManagement(
-                        session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .csrf(csrf -> csrf.disable());
+                        session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
         return http.build();
     }
 }
