@@ -50,4 +50,15 @@ class SecurityTest {
     void everyOtherPathRequiresAToken() throws Exception {
         assertThat(status(port, "/api/units")).isEqualTo(401);
     }
+
+    @Test
+    void aWriteWithoutAnyTokenIsRejectedByCsrfWith403() throws Exception {
+        var request =
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/units"))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                        .build();
+
+        assertThat(client.send(request, BodyHandlers.discarding()).statusCode()).isEqualTo(403);
+    }
 }
