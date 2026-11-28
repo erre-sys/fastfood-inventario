@@ -26,6 +26,20 @@ class UnitTest {
     }
 
     @Test
+    void onlyTheNameAndTheStateCanChange() {
+        var kilogram =
+                new Unit("kg", "Kilogramo", Dimension.MASS, new BigDecimal("1000"), true, true);
+
+        var changed = kilogram.withName("Kilo").withActive(false);
+
+        assertThat(changed.name()).isEqualTo("Kilo");
+        assertThat(changed.active()).isFalse();
+        assertThat(changed.code()).isEqualTo("kg");
+        assertThat(changed.standard()).isTrue();
+        assertThat(changed.baseFactor()).isEqualByComparingTo("1000");
+    }
+
+    @Test
     void factorMustBePositive() {
         assertThatThrownBy(() -> new Unit("x", "Nada", Dimension.MASS, BigDecimal.ZERO))
                 .isInstanceOf(IllegalArgumentException.class)

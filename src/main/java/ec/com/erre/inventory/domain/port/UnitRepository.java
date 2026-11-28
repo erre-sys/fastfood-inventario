@@ -9,9 +9,12 @@ public interface UnitRepository {
 
     List<Unit> findAll();
 
+    ResultPage<Unit> search(UnitSearch search);
+
     Optional<Unit> findByCode(String code);
 
     boolean existsByCode(String code);
 
+    /** Creates the unit, or updates an existing one: only its name and state change. */
     Unit save(Unit unit);
 }
