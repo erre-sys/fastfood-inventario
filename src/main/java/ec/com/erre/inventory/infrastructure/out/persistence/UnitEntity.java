@@ -1,5 +1,6 @@
 package ec.com.erre.inventory.infrastructure.out.persistence;
 
+import ec.com.erre.inventory.domain.Audit;
 import ec.com.erre.inventory.domain.Dimension;
 import ec.com.erre.inventory.domain.Unit;
 import jakarta.persistence.Column;
@@ -84,6 +85,13 @@ class UnitEntity {
     }
 
     Unit toDomain() {
-        return new Unit(code, name, dimension, baseFactor, standard, active);
+        return new Unit(
+                code,
+                name,
+                dimension,
+                baseFactor,
+                standard,
+                active,
+                new Audit(createdBy, createdAt, updatedBy, updatedAt));
     }
 }
