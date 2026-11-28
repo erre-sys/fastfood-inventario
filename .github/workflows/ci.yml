@@ -187,7 +187,12 @@ jobs:
           ARCHIVO="workloads/negocio/$NEGOCIO/$SERVICIO/values.yaml"
           RAMA="despliegue/$NEGOCIO-$SERVICIO-$TAG"
 
-          sed -i -E "s/^(  etiqueta: ).*/\1$TAG/" "$ARCHIVO"
+          # Si el formato de los values cambia, fallar en vez de "no desplegar" en silencio.
+          if ! grep -qE '^  tag: ' "$ARCHIVO"; then
+            echo "::error::$ARCHIVO no tiene la línea '  tag:' (formato de los values del chart)"
+            exit 1
+          fi
+          sed -i -E "s/^(  tag: ).*/\1$TAG/" "$ARCHIVO"
           if git diff --quiet; then
             echo "La etiqueta $TAG ya está desplegada"
             exit 0
@@ -195,7 +200,7 @@ jobs:
 
           # Resguardo: el único cambio permitido es una línea de etiqueta.
           CAMBIOS=$(git diff --numstat | awk '{a+=$1; d+=$2} END {print a" "d}')
-          if [ "$CAMBIOS" != "1 1" ] || ! git diff -U0 | grep -qE '^\+  etiqueta: sha-[0-9a-f]{7}$'; then
+          if [ "$CAMBIOS" != "1 1" ] || ! git diff -U0 | grep -qE '^\+  tag: sha-[0-9a-f]{7}$'; then
             echo "::error::El cambio no es solo la etiqueta; no se mergea"
             git diff
             exit 1
