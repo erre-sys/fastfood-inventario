@@ -250,6 +250,7 @@ class ItemRepositoryTest {
                                 BigDecimal.ONE,
                                 null));
 
-        assertThatThrownBy(() -> yields.save(measured)).isInstanceOf(IllegalStateException.class);
+        // The adapter refuses it; Spring translates the exception, so check the message
+        assertThatThrownBy(() -> yields.save(measured)).hasMessageContaining("never changed");
     }
 }
