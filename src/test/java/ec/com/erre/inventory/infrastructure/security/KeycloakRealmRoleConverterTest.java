@@ -1,5 +1,8 @@
 package ec.com.erre.inventory.infrastructure.security;
 
+import static ec.com.erre.inventory.infrastructure.security.Permissions.ITEMS_CREATE;
+import static ec.com.erre.inventory.infrastructure.security.Permissions.ITEMS_EDIT;
+import static ec.com.erre.inventory.infrastructure.security.Permissions.ITEMS_READ;
 import static ec.com.erre.inventory.infrastructure.security.Permissions.UNITS_CREATE;
 import static ec.com.erre.inventory.infrastructure.security.Permissions.UNITS_EDIT;
 import static ec.com.erre.inventory.infrastructure.security.Permissions.UNITS_READ;
@@ -38,22 +41,36 @@ class KeycloakRealmRoleConverterTest {
     @Test
     void adminGetsEveryUnitsPermission() {
         assertThat(authorities(tokenWithRoles("ADMIN")))
-                .containsExactlyInAnyOrder("ROLE_ADMIN", UNITS_READ, UNITS_CREATE, UNITS_EDIT);
+                .containsExactlyInAnyOrder(
+                        "ROLE_ADMIN",
+                        UNITS_READ,
+                        UNITS_CREATE,
+                        UNITS_EDIT,
+                        ITEMS_READ,
+                        ITEMS_CREATE,
+                        ITEMS_EDIT);
     }
 
     @Test
     void cashierAndSellerCanOnlyRead() {
         assertThat(authorities(tokenWithRoles("CAJERO")))
-                .containsExactlyInAnyOrder("ROLE_CAJERO", UNITS_READ);
+                .containsExactlyInAnyOrder("ROLE_CAJERO", UNITS_READ, ITEMS_READ);
         assertThat(authorities(tokenWithRoles("VENDEDOR")))
-                .containsExactlyInAnyOrder("ROLE_VENDEDOR", UNITS_READ);
+                .containsExactlyInAnyOrder("ROLE_VENDEDOR", UNITS_READ, ITEMS_READ);
     }
 
     @Test
     void permissionsOfSeveralRolesAreCombined() {
         assertThat(authorities(tokenWithRoles("CAJERO", "ADMIN")))
                 .containsExactlyInAnyOrder(
-                        "ROLE_CAJERO", "ROLE_ADMIN", UNITS_READ, UNITS_CREATE, UNITS_EDIT);
+                        "ROLE_CAJERO",
+                        "ROLE_ADMIN",
+                        UNITS_READ,
+                        UNITS_CREATE,
+                        UNITS_EDIT,
+                        ITEMS_READ,
+                        ITEMS_CREATE,
+                        ITEMS_EDIT);
     }
 
     @Test

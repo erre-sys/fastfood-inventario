@@ -303,9 +303,7 @@ class UnitApiTest {
         mvc.perform(change("kg", "{}").with(admin()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-                .andExpect(
-                        jsonPath("$.detail")
-                                .value("Envía al menos un campo para cambiar: name o active."))
+                .andExpect(jsonPath("$.detail").value("Envía al menos un campo para cambiar."))
                 .andExpect(ApiContract.matches("Problem"));
     }
 

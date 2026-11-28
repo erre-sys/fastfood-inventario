@@ -15,7 +15,15 @@ final class ApiPatterns {
     /** Sort parameter of the unit list: field and optional direction. */
     static final String UNIT_SORT = "^(code|name|dimension)(,(asc|desc))?$";
 
+    /** Sort parameter of the item list. */
+    static final String ITEM_SORT = "^(name|kind)(,(asc|desc))?$";
+
+    /** {@code GramsPerUnit}: up to 6 integer digits and 3 decimals. */
+    static final String GRAMS_PER_UNIT = "^\\d{1,6}(\\.\\d{1,3})?$";
+
     static final int NAME_MAX = 60;
+    static final int ITEM_NAME_MAX = 80;
+    static final int NOTE_MAX = 200;
 
     private ApiPatterns() {}
 }

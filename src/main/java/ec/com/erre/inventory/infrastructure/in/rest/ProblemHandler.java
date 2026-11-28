@@ -1,6 +1,11 @@
 package ec.com.erre.inventory.infrastructure.in.rest;
 
+import ec.com.erre.inventory.application.InvalidFieldException;
+import ec.com.erre.inventory.domain.CategoryAlreadyExistsException;
+import ec.com.erre.inventory.domain.CategoryNotFoundException;
 import ec.com.erre.inventory.domain.InvalidConversionException;
+import ec.com.erre.inventory.domain.ItemAlreadyExistsException;
+import ec.com.erre.inventory.domain.ItemNotFoundException;
 import ec.com.erre.inventory.domain.UnitAlreadyExistsException;
 import ec.com.erre.inventory.domain.UnitNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -70,6 +75,40 @@ class ProblemHandler extends ResponseEntityExceptionHandler {
                 ex.source().dimension(),
                 ex.target().code(),
                 ex.target().dimension());
+    }
+
+    @ExceptionHandler(ItemNotFoundException.class)
+    ResponseEntity<Object> itemNotFound(ItemNotFoundException ex, WebRequest request) {
+        return problem(HttpStatus.NOT_FOUND, ErrorCode.ITEM_NOT_FOUND, request);
+    }
+
+    @ExceptionHandler(ItemAlreadyExistsException.class)
+    ResponseEntity<Object> itemAlreadyExists(ItemAlreadyExistsException ex, WebRequest request) {
+        return problem(HttpStatus.CONFLICT, ErrorCode.ITEM_ALREADY_EXISTS, request, ex.name());
+    }
+
+    @ExceptionHandler(CategoryNotFoundException.class)
+    ResponseEntity<Object> categoryNotFound(CategoryNotFoundException ex, WebRequest request) {
+        return problem(HttpStatus.NOT_FOUND, ErrorCode.CATEGORY_NOT_FOUND, request);
+    }
+
+    @ExceptionHandler(CategoryAlreadyExistsException.class)
+    ResponseEntity<Object> categoryAlreadyExists(
+            CategoryAlreadyExistsException ex, WebRequest request) {
+        return problem(HttpStatus.CONFLICT, ErrorCode.CATEGORY_ALREADY_EXISTS, request, ex.name());
+    }
+
+    /** A well-formed field that cannot be used (inactive category, unknown unit...). */
+    @ExceptionHandler(InvalidFieldException.class)
+    ResponseEntity<Object> invalidField(InvalidFieldException ex, WebRequest request) {
+        var problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
+        describe(problem, ErrorCode.VALIDATION_FAILED, request);
+        problem.setProperty(
+                "errors",
+                List.of(
+                        new FieldMessage(
+                                ex.field(), text("field." + ex.reason() + "." + ex.field()))));
+        return ResponseEntity.badRequest().body(problem);
     }
 
     @ExceptionHandler(EmptyPatchException.class)
