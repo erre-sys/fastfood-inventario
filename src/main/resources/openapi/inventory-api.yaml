@@ -1,0 +1,464 @@
+openapi: 3.1.0
+info:
+  title: erre inventory API
+  version: 0.1.0
+  description: |
+    Contract of the inventory service (contract-first: the code and the clients follow this file).
+
+    Conventions:
+    - Every endpoint requires a Keycloak bearer token (realm `erre`). Required permissions are listed
+      in each operation; roles map to permissions in the service (ADMIN: all; CAJERO, VENDEDOR: read).
+    - Nothing is deleted: records are inactivated (`active: false`).
+    - Decimal values travel as strings to keep their exact precision (`"453.59237"`, `"2.5"`).
+    - Errors use Problem Details (RFC 9457). `title` and `detail` are user-facing and in Spanish;
+      `code` is a stable identifier for clients.
+  license:
+    name: AGPL-3.0-only
+    url: https://www.gnu.org/licenses/agpl-3.0.html
+servers:
+  - url: /
+security:
+  - bearerAuth: []
+tags:
+  - name: units
+    description: Units of measure and their conversions
+paths:
+  /api/units:
+    get:
+      tags: [units]
+      operationId: listUnits
+      summary: List units, paginated
+      description: "Requires `units:read`."
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: sort
+          in: query
+          description: Sort field and direction. Only `code`, `name` and `dimension` are allowed.
+          schema:
+            type: string
+            pattern: '^(code|name|dimension)(,(asc|desc))?$'
+            default: code,asc
+        - name: dimension
+          in: query
+          schema:
+            $ref: '#/components/schemas/Dimension'
+        - name: text
+          in: query
+          description: Case-insensitive match on code or name.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 60
+        - name: active
+          in: query
+          description: Filter by state. Omitted returns active and inactive units.
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: One page of units
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnitPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [units]
+      operationId: createUnit
+      summary: Create a business-specific unit
+      description: "Requires `units:create`. The code can never change after creation."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnitCreate'
+            example:
+              code: portion180
+              name: Porción de 180 g
+              dimension: MASS
+              baseFactor: '180'
+      responses:
+        '201':
+          description: Unit created
+          headers:
+            Location:
+              description: URL of the new unit
+              schema:
+                type: string
+                example: /api/units/portion180
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Unit'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: A unit with that code already exists (code `UNIT_ALREADY_EXISTS`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: about:blank
+                title: La unidad ya existe
+                status: 409
+                detail: Ya existe una unidad con el código «portion180».
+                instance: /api/units
+                code: UNIT_ALREADY_EXISTS
+  /api/units/{code}:
+    parameters:
+      - $ref: '#/components/parameters/UnitCode'
+    get:
+      tags: [units]
+      operationId: getUnit
+      summary: Get one unit
+      description: "Requires `units:read`."
+      responses:
+        '200':
+          description: The unit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Unit'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnitNotFound'
+    patch:
+      tags: [units]
+      operationId: updateUnit
+      summary: Change the name or the state of a unit
+      description: |
+        Requires `units:edit`. JSON Merge Patch (RFC 7396): only the fields sent change.
+        Only `name` and `active` can change, for standard and business units alike. Any other field
+        (code, dimension, baseFactor) is rejected with 400, because recipes and stock depend on them.
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: '#/components/schemas/UnitPatch'
+            examples:
+              rename:
+                value:
+                  name: Porción grande
+              inactivate:
+                value:
+                  active: false
+      responses:
+        '200':
+          description: The updated unit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Unit'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnitNotFound'
+        '415':
+          description: The body must be `application/merge-patch+json`
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /api/conversions:
+    get:
+      tags: [units]
+      operationId: convertQuantity
+      summary: Convert a quantity between two units of the same dimension
+      description: |
+        Requires `units:read`. A separate resource from `/api/units/{code}` so that no unit code can
+        collide with it. Inactive units can still be converted (historical records use them).
+        The result is rounded half-up to 3 decimal places.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/UnitCodeValue'
+        - name: to
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/UnitCodeValue'
+        - name: value
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/QuantityValue'
+      responses:
+        '200':
+          description: The converted quantity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversion'
+              example:
+                source: { value: '2.5', unit: kg }
+                target: { value: '2500.000', unit: g }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnitNotFound'
+        '422':
+          description: The units have different dimensions (code `INVALID_CONVERSION`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: about:blank
+                title: Conversión no válida
+                status: 422
+                detail: No se puede convertir kg (MASS) a ml (VOLUME).
+                instance: /api/conversions
+                code: INVALID_CONVERSION
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Page:
+      name: page
+      in: query
+      description: Zero-based page number.
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Size:
+      name: size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    UnitCode:
+      name: code
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/UnitCodeValue'
+  responses:
+    BadRequest:
+      description: Invalid input (code `VALIDATION_FAILED`); `errors` lists each field
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Datos no válidos
+            status: 400
+            detail: Revisa los campos marcados.
+            instance: /api/units
+            code: VALIDATION_FAILED
+            errors:
+              - field: baseFactor
+                message: Debe ser mayor que cero y tener hasta 6 decimales.
+    Unauthorized:
+      description: Missing or invalid token
+    Forbidden:
+      description: |
+        The token lacks the required permission. A `POST` or `PATCH` without any token also returns 403,
+        because CSRF protection runs before authentication for requests without a bearer token.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    UnitNotFound:
+      description: No unit with that code (code `UNIT_NOT_FOUND`)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Unidad no encontrada
+            status: 404
+            detail: No existe una unidad con el código «onza».
+            instance: /api/units/onza
+            code: UNIT_NOT_FOUND
+  schemas:
+    Dimension:
+      type: string
+      enum: [MASS, VOLUME, COUNT]
+      description: What a unit measures. Conversions are only possible within the same dimension.
+    UnitCodeValue:
+      type: string
+      pattern: '^[a-z0-9][a-z0-9_-]{0,19}$'
+      description: Short, stable identifier in lowercase (kg, tsp, portion180). Never changes.
+      examples: [kg]
+    Decimal:
+      type: string
+      description: Exact decimal number as text.
+    BaseFactor:
+      allOf:
+        - $ref: '#/components/schemas/Decimal'
+      pattern: '^\d{1,12}(\.\d{1,6})?$'
+      description: How many base units (g, ml, unit) this unit holds. Greater than zero, up to 6 decimals.
+      examples: ['1000']
+    QuantityValue:
+      allOf:
+        - $ref: '#/components/schemas/Decimal'
+      pattern: '^\d{1,12}(\.\d{1,3})?$'
+      description: A non-negative quantity, up to 3 decimals.
+      examples: ['2.5']
+    Unit:
+      type: object
+      additionalProperties: false
+      required: [code, name, dimension, baseFactor, standard, active, createdBy, createdAt]
+      properties:
+        code:
+          $ref: '#/components/schemas/UnitCodeValue'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 60
+          examples: [Kilogramo]
+        dimension:
+          $ref: '#/components/schemas/Dimension'
+        baseFactor:
+          $ref: '#/components/schemas/BaseFactor'
+        standard:
+          type: boolean
+          description: True for the units every install ships with.
+        active:
+          type: boolean
+        createdBy:
+          type: string
+          description: Username from the token, or `system` for the standard units.
+        createdAt:
+          type: string
+          format: date-time
+          description: UTC, ISO-8601.
+        updatedBy:
+          type: [string, 'null']
+        updatedAt:
+          type: [string, 'null']
+          format: date-time
+    UnitCreate:
+      type: object
+      additionalProperties: false
+      required: [code, name, dimension, baseFactor]
+      properties:
+        code:
+          $ref: '#/components/schemas/UnitCodeValue'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 60
+        dimension:
+          $ref: '#/components/schemas/Dimension'
+        baseFactor:
+          $ref: '#/components/schemas/BaseFactor'
+    UnitPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 60
+        active:
+          type: boolean
+    UnitPage:
+      type: object
+      additionalProperties: false
+      required: [content, page]
+      description: Same shape as Spring Data's `PagedModel` (serialization mode `via_dto`).
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/Unit'
+        page:
+          $ref: '#/components/schemas/PageMetadata'
+    PageMetadata:
+      type: object
+      additionalProperties: false
+      required: [size, number, totalElements, totalPages]
+      properties:
+        size:
+          type: integer
+        number:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+    Quantity:
+      type: object
+      additionalProperties: false
+      required: [value, unit]
+      properties:
+        value:
+          $ref: '#/components/schemas/Decimal'
+        unit:
+          $ref: '#/components/schemas/UnitCodeValue'
+    Conversion:
+      type: object
+      additionalProperties: false
+      required: [source, target]
+      properties:
+        source:
+          $ref: '#/components/schemas/Quantity'
+        target:
+          $ref: '#/components/schemas/Quantity'
+    Problem:
+      type: object
+      description: Problem Details (RFC 9457) with a stable `code` and optional field errors.
+      required: [title, status]
+      properties:
+        type:
+          type: string
+          default: about:blank
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          enum: [VALIDATION_FAILED, UNIT_NOT_FOUND, UNIT_ALREADY_EXISTS, INVALID_CONVERSION, UNAUTHORIZED, FORBIDDEN, UNSUPPORTED_MEDIA_TYPE]
+        errors:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, message]
+            properties:
+              field:
+                type: string
+              message:
+                type: string
