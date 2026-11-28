@@ -61,7 +61,8 @@ class JpaUnitRepository implements UnitRepository {
 
     /**
      * Creates the unit, or updates an existing one. On update only the name and the state change,
-     * so the creation audit and the immutable fields are never overwritten.
+     * so the creation audit and the immutable fields are never overwritten. Flushes so the audit of
+     * an update (filled in when the change reaches the database) is in the returned unit.
      */
     @Override
     public Unit save(Unit unit) {
@@ -72,6 +73,6 @@ class JpaUnitRepository implements UnitRepository {
                             return existing;
                         })
                         .orElseGet(() -> UnitEntity.from(unit));
-        return jpa.save(entity).toDomain();
+        return jpa.saveAndFlush(entity).toDomain();
     }
 }

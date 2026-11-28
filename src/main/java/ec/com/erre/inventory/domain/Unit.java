@@ -9,6 +9,7 @@ import java.math.BigDecimal;
  * @param baseFactor amount of the base unit of its dimension; up to 6 decimal places
  * @param standard true for the units every install ships with
  * @param active false when inactivated; units are never deleted
+ * @param audit who created and changed it; null for a unit that has not been stored yet
  */
 public record Unit(
         String code,
@@ -16,7 +17,8 @@ public record Unit(
         Dimension dimension,
         BigDecimal baseFactor,
         boolean standard,
-        boolean active) {
+        boolean active,
+        Audit audit) {
 
     static final int FACTOR_SCALE = 6;
 
@@ -39,6 +41,17 @@ public record Unit(
         }
     }
 
+    /** A unit that has not been stored yet, so it has no audit. */
+    public Unit(
+            String code,
+            String name,
+            Dimension dimension,
+            BigDecimal baseFactor,
+            boolean standard,
+            boolean active) {
+        this(code, name, dimension, baseFactor, standard, active, null);
+    }
+
     /** A new business-specific unit: not standard, active. */
     public Unit(String code, String name, Dimension dimension, BigDecimal baseFactor) {
         this(code, name, dimension, baseFactor, false, true);
@@ -46,12 +59,12 @@ public record Unit(
 
     /** The same unit with another name. Only the name and the state may change after creation. */
     public Unit withName(String newName) {
-        return new Unit(code, newName, dimension, baseFactor, standard, active);
+        return new Unit(code, newName, dimension, baseFactor, standard, active, audit);
     }
 
     /** The same unit, active or inactive. Units are never deleted. */
     public Unit withActive(boolean newActive) {
-        return new Unit(code, name, dimension, baseFactor, standard, newActive);
+        return new Unit(code, name, dimension, baseFactor, standard, newActive, audit);
     }
 
     public boolean isBase() {
