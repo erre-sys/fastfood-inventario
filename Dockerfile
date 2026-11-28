@@ -8,7 +8,7 @@ COPY mvnw pom.xml ./
 COPY src/ src/
 RUN --mount=type=cache,target=/root/.m2 \
     ./mvnw -B -ntp package -DskipTests -Dspotless.check.skip=true -Djacoco.skip=true \
-    && cp target/fastfood-inventario-*.jar app.jar \
+    && cp target/erre-inventario-*.jar app.jar \
     && java -Djarmode=tools -jar app.jar extract --layers --launcher --destination extraido
 
 # --- Etapa 2: ejecutar. Solo el JRE y la aplicación separada en capas. ---

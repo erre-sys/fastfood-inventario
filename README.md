@@ -1,6 +1,6 @@
-# fastfood-inventario
+# erre-inventario
 
-Microservicio de **inventario** de Food in House: insumos, unidades y conversiones, rendimientos, proveedores, compras y kardex. Diseño: documento de Discovery (Outline, colección Producto) y ADR 0022 a 0025 en `fastfood-infra`.
+Microservicio de **inventario** de Food in House: insumos, unidades y conversiones, rendimientos, proveedores, compras y kardex. Diseño: documento de Discovery (Outline, colección Producto) y ADR 0022 a 0025 en `erre-infra`.
 
 ## Requisitos
 - **Java 25**: el archivo `.java-version` lo fija con jenv.
