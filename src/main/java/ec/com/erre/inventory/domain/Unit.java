@@ -5,10 +5,18 @@ import java.math.BigDecimal;
 /**
  * Unit of measure. The factor says how many base units it holds: 1 kg = 1000 g.
  *
- * @param code short, stable identifier (kg, ml, unit)
+ * @param code short, stable identifier (kg, ml, unit); never changes
  * @param baseFactor amount of the base unit of its dimension; up to 6 decimal places
+ * @param standard true for the units every install ships with
+ * @param active false when inactivated; units are never deleted
  */
-public record Unit(String code, String name, Dimension dimension, BigDecimal baseFactor) {
+public record Unit(
+        String code,
+        String name,
+        Dimension dimension,
+        BigDecimal baseFactor,
+        boolean standard,
+        boolean active) {
 
     static final int FACTOR_SCALE = 6;
 
@@ -29,6 +37,11 @@ public record Unit(String code, String name, Dimension dimension, BigDecimal bas
             throw new IllegalArgumentException(
                     "Base factor allows up to " + FACTOR_SCALE + " decimal places");
         }
+    }
+
+    /** A new business-specific unit: not standard, active. */
+    public Unit(String code, String name, Dimension dimension, BigDecimal baseFactor) {
+        this(code, name, dimension, baseFactor, false, true);
     }
 
     public boolean isBase() {

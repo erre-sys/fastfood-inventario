@@ -18,6 +18,14 @@ class UnitTest {
     }
 
     @Test
+    void aNewBusinessUnitIsActiveAndNotStandard() {
+        var portion = new Unit("portion180", "Porción", Dimension.MASS, new BigDecimal("180"));
+
+        assertThat(portion.active()).isTrue();
+        assertThat(portion.standard()).isFalse();
+    }
+
+    @Test
     void factorMustBePositive() {
         assertThatThrownBy(() -> new Unit("x", "Nada", Dimension.MASS, BigDecimal.ZERO))
                 .isInstanceOf(IllegalArgumentException.class)
