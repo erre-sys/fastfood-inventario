@@ -12,12 +12,22 @@ public final class Permissions {
     public static final String UNITS_READ = "units:read";
     public static final String UNITS_CREATE = "units:create";
     public static final String UNITS_EDIT = "units:edit";
+    public static final String ITEMS_READ = "items:read";
+    public static final String ITEMS_CREATE = "items:create";
+    public static final String ITEMS_EDIT = "items:edit";
 
     private static final Map<String, Set<String>> BY_ROLE =
             Map.of(
-                    "ADMIN", Set.of(UNITS_READ, UNITS_CREATE, UNITS_EDIT),
-                    "CAJERO", Set.of(UNITS_READ),
-                    "VENDEDOR", Set.of(UNITS_READ));
+                    "ADMIN",
+                            Set.of(
+                                    UNITS_READ,
+                                    UNITS_CREATE,
+                                    UNITS_EDIT,
+                                    ITEMS_READ,
+                                    ITEMS_CREATE,
+                                    ITEMS_EDIT),
+                    "CAJERO", Set.of(UNITS_READ, ITEMS_READ),
+                    "VENDEDOR", Set.of(UNITS_READ, ITEMS_READ));
 
     private Permissions() {}
 
