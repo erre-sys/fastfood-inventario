@@ -1,13 +1,14 @@
 openapi: 3.1.0
 info:
   title: erre inventory API
-  version: 0.1.0
+  version: 0.2.0
   description: |
     Contract of the inventory service (contract-first: the code and the clients follow this file).
 
     Conventions:
     - Every endpoint requires a Keycloak bearer token (realm `erre`). Required permissions are listed
-      in each operation; roles map to permissions in the service (ADMIN: all; CAJERO, VENDEDOR: read).
+      in each operation; roles map to permissions in the service (ADMIN: all; CAJERO, VENDEDOR: read
+      of units and items).
     - Nothing is deleted: records are inactivated (`active: false`).
     - Decimal values travel as strings to keep their exact precision (`"453.59237"`, `"2.5"`).
     - Errors use Problem Details (RFC 9457). `title` and `detail` are user-facing and in Spanish;
@@ -16,14 +17,22 @@ info:
     name: AGPL-3.0-only
     url: https://www.gnu.org/licenses/agpl-3.0.html
 servers:
-  - url: /
+  - url: /api/v1/inventario
+    description: |
+      Public path. The Ingress strips this prefix (Traefik StripPrefix), so the service itself
+      serves `/units` and `/conversions`.
 security:
   - bearerAuth: []
 tags:
   - name: units
     description: Units of measure and their conversions
+  - name: items
+    description: |
+      Items: everything that is stocked (flour, eggs, a batch of focaccia). PURCHASED items are
+      bought (also the ones resold as they are, like a soda); PREPARED items come out of a batch.
+      Stock, costs and movements come in a later version of this contract.
 paths:
-  /api/units:
+  /units:
     get:
       tags: [units]
       operationId: listUnits
@@ -89,10 +98,11 @@ paths:
           description: Unit created
           headers:
             Location:
-              description: URL of the new unit
+              description: Absolute URL of the new unit, with the public prefix
               schema:
                 type: string
-                example: /api/units/portion180
+                format: uri
+                example: https://app-erre.dev.erre.cloud/api/v1/inventario/units/portion180
           content:
             application/json:
               schema:
@@ -114,9 +124,9 @@ paths:
                 title: La unidad ya existe
                 status: 409
                 detail: Ya existe una unidad con el código «portion180».
-                instance: /api/units
+                instance: /api/v1/inventario/units
                 code: UNIT_ALREADY_EXISTS
-  /api/units/{code}:
+  /units/{code}:
     parameters:
       - $ref: '#/components/parameters/UnitCode'
     get:
@@ -179,13 +189,13 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /api/conversions:
+  /conversions:
     get:
       tags: [units]
       operationId: convertQuantity
       summary: Convert a quantity between two units of the same dimension
       description: |
-        Requires `units:read`. A separate resource from `/api/units/{code}` so that no unit code can
+        Requires `units:read`. A separate resource from `/units/{code}` so that no unit code can
         collide with it. Inactive units can still be converted (historical records use them).
         The result is rounded half-up to 3 decimal places.
       parameters:
@@ -233,15 +243,330 @@ paths:
                 title: Conversión no válida
                 status: 422
                 detail: No se puede convertir kg (MASS) a ml (VOLUME).
-                instance: /api/conversions
+                instance: /api/v1/inventario/conversions
                 code: INVALID_CONVERSION
+  /item-categories:
+    get:
+      tags: [items]
+      operationId: listItemCategories
+      summary: List item categories (Vegetales, Abarrotes, Proteínas...)
+      description: "Requires `items:read`. Sorted by name. Not paginated: a business has few."
+      parameters:
+        - name: active
+          in: query
+          description: Filter by state. Omitted returns active and inactive categories.
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: All the categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ItemCategory'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [items]
+      operationId: createItemCategory
+      summary: Create a category
+      description: "Requires `items:create`. Names are unique, ignoring case."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemCategoryCreate'
+            example:
+              name: Lácteos
+      responses:
+        '201':
+          description: Category created
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemCategory'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/CategoryAlreadyExists'
+  /item-categories/{id}:
+    patch:
+      tags: [items]
+      operationId: updateItemCategory
+      summary: Rename or (in)activate a category
+      description: |
+        Requires `items:edit`. JSON Merge Patch (RFC 7396): send only what changes. An inactive
+        category keeps its items, but new items cannot use it.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: '#/components/schemas/ItemCategoryPatch'
+            example:
+              active: false
+      responses:
+        '200':
+          description: Category updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemCategory'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CategoryNotFound'
+        '409':
+          $ref: '#/components/responses/CategoryAlreadyExists'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+  /items:
+    get:
+      tags: [items]
+      operationId: listItems
+      summary: List items, paginated
+      description: "Requires `items:read`."
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: sort
+          in: query
+          description: Sort field and direction. Only `name` and `kind` are allowed.
+          schema:
+            type: string
+            pattern: '^(name|kind)(,(asc|desc))?$'
+            default: name,asc
+        - name: text
+          in: query
+          description: Case-insensitive match on the name.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 80
+        - name: kind
+          in: query
+          schema:
+            $ref: '#/components/schemas/ItemKind'
+        - name: category
+          in: query
+          description: Category id.
+          schema:
+            type: string
+            format: uuid
+        - name: active
+          in: query
+          description: Filter by state. Omitted returns active and inactive items.
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: One page of items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [items]
+      operationId: createItem
+      summary: Create an item
+      description: |
+        Requires `items:create`. Names are unique, ignoring case. The kind and the stock unit can
+        never change: the kardex is kept in that unit. The category and the stock unit must be
+        active; otherwise the response is a 400 for that field.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemCreate'
+            example:
+              name: Huevo
+              kind: PURCHASED
+              categoryId: 0b6f8c3e-4a51-4d1b-9a0e-6f2d3c1b7a10
+              stockUnit: unit
+              minimumStock: '30'
+              gramsPerUnit: '60'
+      responses:
+        '201':
+          description: Item created
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/ItemAlreadyExists'
+  /items/{id}:
+    get:
+      tags: [items]
+      operationId: getItem
+      summary: Get one item
+      description: "Requires `items:read`."
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The item
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ItemNotFound'
+    patch:
+      tags: [items]
+      operationId: updateItem
+      summary: Change an item
+      description: |
+        Requires `items:edit`. JSON Merge Patch (RFC 7396): send only what changes. `gramsPerUnit`
+        can be removed with `null`; the other fields cannot. The kind and the stock unit never change.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: '#/components/schemas/ItemPatch'
+            example:
+              minimumStock: '45'
+      responses:
+        '200':
+          description: Item updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ItemNotFound'
+        '409':
+          $ref: '#/components/responses/ItemAlreadyExists'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+  /items/{id}/yields:
+    get:
+      tags: [items]
+      operationId: listItemYields
+      summary: Yield history of an item, newest first
+      description: |
+        Requires `items:read`. The yield is how much of what is bought can be used (peeled onion:
+        91 %). The usable cost is the cost divided by the yield.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: All the yields recorded, newest first; the first one is the current one
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Yield'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ItemNotFound'
+    post:
+      tags: [items]
+      operationId: recordItemYield
+      summary: Record a new yield measurement; it becomes the current one
+      description: |
+        Requires `items:edit`. Record what was weighed: the gross quantity and the usable part,
+        in the stock unit of the item. The previous yields stay in the history. Without any yield,
+        an item yields 100 %.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/YieldCreate'
+            example:
+              grossQuantity: '1000'
+              usableQuantity: '910'
+              note: Cebolla paiteña pelada
+      responses:
+        '201':
+          description: Yield recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Yield'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ItemNotFound'
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  headers:
+    Location:
+      description: Absolute URL of the new resource, with the public prefix
+      schema:
+        type: string
+        format: uri
   parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     Page:
       name: page
       in: query
@@ -276,7 +601,7 @@ components:
             title: Datos no válidos
             status: 400
             detail: Revisa los campos marcados.
-            instance: /api/units
+            instance: /api/v1/inventario/units
             code: VALIDATION_FAILED
             errors:
               - field: baseFactor
@@ -302,8 +627,45 @@ components:
             title: Unidad no encontrada
             status: 404
             detail: No existe una unidad con el código «onza».
-            instance: /api/units/onza
+            instance: /api/v1/inventario/units/onza
             code: UNIT_NOT_FOUND
+    ItemNotFound:
+      description: No item with that id (code `ITEM_NOT_FOUND`)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ItemAlreadyExists:
+      description: Another item has that name (code `ITEM_ALREADY_EXISTS`)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: El insumo ya existe
+            status: 409
+            detail: Ya existe un insumo con el nombre «Huevo».
+            instance: /api/v1/inventario/items
+            code: ITEM_ALREADY_EXISTS
+    CategoryNotFound:
+      description: No category with that id (code `CATEGORY_NOT_FOUND`)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    CategoryAlreadyExists:
+      description: Another category has that name (code `CATEGORY_ALREADY_EXISTS`)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    UnsupportedMediaType:
+      description: The body is not `application/merge-patch+json` (code `UNSUPPORTED_MEDIA_TYPE`)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
   schemas:
     Dimension:
       type: string
@@ -432,6 +794,200 @@ components:
           $ref: '#/components/schemas/Quantity'
         target:
           $ref: '#/components/schemas/Quantity'
+    ItemKind:
+      type: string
+      enum: [PURCHASED, PREPARED]
+      description: |
+        PURCHASED: bought, including what is resold as it is. PREPARED: comes out of a batch
+        (focaccia, ragú) and has its own stock.
+    ItemName:
+      type: string
+      minLength: 1
+      maxLength: 80
+      examples: [Huevo]
+    CategoryName:
+      type: string
+      minLength: 1
+      maxLength: 60
+      examples: [Lácteos]
+    GramsPerUnit:
+      allOf:
+        - $ref: '#/components/schemas/Decimal'
+      pattern: '^\d{1,6}(\.\d{1,3})?$'
+      description: |
+        Only for items counted in units (dimension COUNT): what one unit weighs, in grams, so a
+        recipe can use them by weight (an egg: 60 g). Greater than zero.
+      examples: ['60']
+    ItemCategory:
+      type: object
+      additionalProperties: false
+      required: [id, name, active]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          $ref: '#/components/schemas/CategoryName'
+        active:
+          type: boolean
+    ItemCategoryCreate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          $ref: '#/components/schemas/CategoryName'
+    ItemCategoryPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          $ref: '#/components/schemas/CategoryName'
+        active:
+          type: boolean
+    Item:
+      type: object
+      additionalProperties: false
+      required: [id, name, kind, category, stockUnit, dimension, minimumStock, yieldPercent, active, createdBy, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          $ref: '#/components/schemas/ItemName'
+        kind:
+          $ref: '#/components/schemas/ItemKind'
+        category:
+          type: object
+          additionalProperties: false
+          required: [id, name]
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              $ref: '#/components/schemas/CategoryName'
+        stockUnit:
+          $ref: '#/components/schemas/UnitCodeValue'
+        dimension:
+          $ref: '#/components/schemas/Dimension'
+        minimumStock:
+          $ref: '#/components/schemas/QuantityValue'
+        gramsPerUnit:
+          oneOf:
+            - $ref: '#/components/schemas/GramsPerUnit'
+            - type: 'null'
+        yieldPercent:
+          allOf:
+            - $ref: '#/components/schemas/Decimal'
+          pattern: '^\d{1,3}(\.\d{1,2})?$'
+          description: Current yield, 100 without any measurement.
+          examples: ['91']
+        active:
+          type: boolean
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: [string, 'null']
+        updatedAt:
+          type: [string, 'null']
+          format: date-time
+    ItemCreate:
+      type: object
+      additionalProperties: false
+      required: [name, kind, categoryId, stockUnit, minimumStock]
+      properties:
+        name:
+          $ref: '#/components/schemas/ItemName'
+        kind:
+          $ref: '#/components/schemas/ItemKind'
+        categoryId:
+          type: string
+          format: uuid
+        stockUnit:
+          $ref: '#/components/schemas/UnitCodeValue'
+        minimumStock:
+          $ref: '#/components/schemas/QuantityValue'
+        gramsPerUnit:
+          $ref: '#/components/schemas/GramsPerUnit'
+    ItemPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          $ref: '#/components/schemas/ItemName'
+        categoryId:
+          type: string
+          format: uuid
+        minimumStock:
+          $ref: '#/components/schemas/QuantityValue'
+        gramsPerUnit:
+          description: '`null` removes it.'
+          oneOf:
+            - $ref: '#/components/schemas/GramsPerUnit'
+            - type: 'null'
+        active:
+          type: boolean
+    ItemPage:
+      type: object
+      additionalProperties: false
+      required: [content, page]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/Item'
+        page:
+          $ref: '#/components/schemas/PageMetadata'
+    Yield:
+      type: object
+      additionalProperties: false
+      required: [id, grossQuantity, usableQuantity, yieldPercent, wastePercent, createdBy, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        grossQuantity:
+          $ref: '#/components/schemas/QuantityValue'
+        usableQuantity:
+          $ref: '#/components/schemas/QuantityValue'
+        yieldPercent:
+          allOf:
+            - $ref: '#/components/schemas/Decimal'
+          description: usable ÷ gross × 100, rounded half-up to 2 decimals.
+          examples: ['91']
+        wastePercent:
+          allOf:
+            - $ref: '#/components/schemas/Decimal'
+          description: 100 − yieldPercent.
+          examples: ['9']
+        note:
+          type: [string, 'null']
+          maxLength: 200
+        createdBy:
+          type: string
+          description: Who measured it.
+        createdAt:
+          type: string
+          format: date-time
+    YieldCreate:
+      type: object
+      additionalProperties: false
+      required: [grossQuantity, usableQuantity]
+      description: Both quantities in the stock unit of the item; usable greater than zero and not above gross.
+      properties:
+        grossQuantity:
+          $ref: '#/components/schemas/QuantityValue'
+        usableQuantity:
+          $ref: '#/components/schemas/QuantityValue'
+        note:
+          type: string
+          maxLength: 200
     Problem:
       type: object
       description: Problem Details (RFC 9457) with a stable `code` and optional field errors.
@@ -450,7 +1006,7 @@ components:
           type: string
         code:
           type: string
-          enum: [VALIDATION_FAILED, UNIT_NOT_FOUND, UNIT_ALREADY_EXISTS, INVALID_CONVERSION, UNAUTHORIZED, FORBIDDEN, UNSUPPORTED_MEDIA_TYPE]
+          enum: [VALIDATION_FAILED, UNIT_NOT_FOUND, UNIT_ALREADY_EXISTS, INVALID_CONVERSION, ITEM_NOT_FOUND, ITEM_ALREADY_EXISTS, CATEGORY_NOT_FOUND, CATEGORY_ALREADY_EXISTS, UNAUTHORIZED, FORBIDDEN, UNSUPPORTED_MEDIA_TYPE]
         errors:
           type: array
           items:
