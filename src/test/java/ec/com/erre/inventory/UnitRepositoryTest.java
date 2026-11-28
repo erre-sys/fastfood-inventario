@@ -5,24 +5,62 @@ import static org.assertj.core.api.Assertions.assertThat;
 import ec.com.erre.inventory.domain.Dimension;
 import ec.com.erre.inventory.domain.Unit;
 import ec.com.erre.inventory.domain.port.UnitRepository;
+import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 
-/** The migration and the JPA adapter, against a real PostgreSQL (Testcontainers). */
+/** The migrations and the JPA adapter, against a real PostgreSQL (Testcontainers). */
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
 @Transactional
 class UnitRepositoryTest {
 
     @Autowired UnitRepository repository;
+    @Autowired EntityManager entityManager;
+    @Autowired JdbcClient jdbc;
+
+    private static Unit portion(String name) {
+        return new Unit("portion180", name, Dimension.MASS, new BigDecimal("180"));
+    }
+
+    private static void signIn(String username) {
+        SecurityContextHolder.getContext()
+                .setAuthentication(
+                        UsernamePasswordAuthenticationToken.authenticated(
+                                username, null, List.of()));
+    }
+
+    /** Reads the audit columns straight from the table, after sending pending changes to it. */
+    private Map<String, Object> auditOf(String code) {
+        entityManager.flush();
+        return jdbc.sql(
+                        "SELECT created_by, created_at, updated_by, updated_at FROM unit WHERE code = ?")
+                .param(code)
+                .query()
+                .singleRow();
+    }
+
+    @AfterEach
+    void signOut() {
+        SecurityContextHolder.clearContext();
+    }
 
     @Test
-    void migrationLoadsTheTwelveStandardUnits() {
-        assertThat(repository.findAll()).hasSize(12);
+    void migrationLoadsTheTwelveStandardUnitsActive() {
+        assertThat(repository.findAll())
+                .hasSize(12)
+                .allMatch(Unit::standard)
+                .allMatch(Unit::active);
     }
 
     @Test
@@ -34,14 +72,56 @@ class UnitRepositoryTest {
     }
 
     @Test
-    void savesABusinessSpecificUnit() {
-        var portion =
-                new Unit("portion180", "Porción de 180 g", Dimension.MASS, new BigDecimal("180"));
+    void savesABusinessSpecificUnitWithTheUserWhoCreatedIt() {
+        signIn("eromero");
 
-        repository.save(portion);
+        var saved = repository.save(portion("Porción de 180 g"));
 
-        assertThat(repository.existsByCode("portion180")).isTrue();
-        assertThat(repository.findByCode("portion180").orElseThrow().name())
-                .isEqualTo("Porción de 180 g");
+        assertThat(saved.standard()).isFalse();
+        assertThat(saved.active()).isTrue();
+        assertThat(auditOf("portion180"))
+                .containsEntry("created_by", "eromero")
+                .containsEntry("updated_by", null)
+                .containsEntry("updated_at", null);
+        assertThat(auditOf("portion180").get("created_at")).isNotNull();
+    }
+
+    @Test
+    void aUnitSavedWithoutAUserIsAttributedToTheSystem() {
+        repository.save(portion("Porción de 180 g"));
+
+        assertThat(auditOf("portion180")).containsEntry("created_by", "system");
+    }
+
+    @Test
+    void anUpdateRecordsWhoChangedItAndKeepsWhoCreatedIt() {
+        signIn("eromero");
+        repository.save(portion("Porción de 180 g"));
+        auditOf("portion180");
+        signIn("cajero1");
+
+        var updated = repository.save(portion("Porción grande"));
+
+        assertThat(updated.name()).isEqualTo("Porción grande");
+        assertThat(auditOf("portion180"))
+                .containsEntry("created_by", "eromero")
+                .containsEntry("updated_by", "cajero1");
+        assertThat(auditOf("portion180").get("updated_at")).isNotNull();
+    }
+
+    @Test
+    void anUpdateOnlyChangesTheNameAndTheState() {
+        repository.save(portion("Porción de 180 g"));
+        var attempt =
+                new Unit(
+                        "portion180", "Otra", Dimension.VOLUME, new BigDecimal("999"), true, false);
+
+        var updated = repository.save(attempt);
+
+        assertThat(updated.name()).isEqualTo("Otra");
+        assertThat(updated.active()).isFalse();
+        assertThat(updated.dimension()).isEqualTo(Dimension.MASS);
+        assertThat(updated.baseFactor()).isEqualByComparingTo("180");
+        assertThat(updated.standard()).isFalse();
     }
 }

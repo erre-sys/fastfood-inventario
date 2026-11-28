@@ -34,8 +34,19 @@ class JpaUnitRepository implements UnitRepository {
         return jpa.existsById(code);
     }
 
+    /**
+     * Creates the unit, or updates an existing one. On update only the name and the state change,
+     * so the creation audit and the immutable fields are never overwritten.
+     */
     @Override
     public Unit save(Unit unit) {
-        return jpa.save(UnitEntity.from(unit)).toDomain();
+        var entity =
+                jpa.findById(unit.code())
+                        .map(existing -> {
+                            existing.update(unit);
+                            return existing;
+                        })
+                        .orElseGet(() -> UnitEntity.from(unit));
+        return jpa.save(entity).toDomain();
     }
 }
