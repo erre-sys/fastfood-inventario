@@ -8,12 +8,12 @@
 		<version>4.2.0</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
-	<groupId>ec.com.erre.fastfood</groupId>
-	<artifactId>fastfood-inventario</artifactId>
+	<groupId>ec.com.erre</groupId>
+	<artifactId>erre-inventario</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name>inventario</name>
 	<description>Microservicio de inventario de Food in House</description>
-	<url>https://github.com/erre-sys/fastfood-inventario</url>
+	<url>https://github.com/erre-sys/erre-inventario</url>
 	<licenses>
 		<license>
 			<name>GNU Affero General Public License v3.0</name>
@@ -26,7 +26,7 @@
 		<spotless.version>3.11.0</spotless.version>
 		<jacoco.version>0.8.16</jacoco.version>
 		<sonar.organization>erre-sys</sonar.organization>
-		<sonar.projectKey>erre-sys_fastfood-inventario</sonar.projectKey>
+		<sonar.projectKey>erre-sys_erre-inventario</sonar.projectKey>
 		<sonar.host.url>https://sonarcloud.io</sonar.host.url>
 	</properties>
 	<dependencies>
