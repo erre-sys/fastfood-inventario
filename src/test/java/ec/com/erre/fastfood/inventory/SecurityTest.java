@@ -12,7 +12,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.context.annotation.Import;
 
-/** Checks which paths are public and which require a token, with the service really running. */
+/**
+ * Checks which paths are public and which require a token, and that Actuator only answers on the
+ * management port, with the service really running.
+ */
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
 class SecurityTest {
@@ -20,21 +23,31 @@ class SecurityTest {
     @Value("${local.server.port}")
     int port;
 
+    @Value("${local.management.port}")
+    int managementPort;
+
     private final HttpClient client = HttpClient.newHttpClient();
 
-    private int status(String path) throws Exception {
-        var request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).build();
+    private int status(int targetPort, String path) throws Exception {
+        var request =
+                HttpRequest.newBuilder(URI.create("http://localhost:" + targetPort + path)).build();
         return client.send(request, BodyHandlers.discarding()).statusCode();
     }
 
     @Test
-    void healthIsPublicForKubernetes() throws Exception {
-        assertThat(status("/actuator/health/liveness")).isEqualTo(200);
-        assertThat(status("/actuator/health/readiness")).isEqualTo(200);
+    void healthIsPublicForKubernetesOnTheManagementPort() throws Exception {
+        assertThat(status(managementPort, "/actuator/health/liveness")).isEqualTo(200);
+        assertThat(status(managementPort, "/actuator/health/readiness")).isEqualTo(200);
+    }
+
+    @Test
+    void actuatorIsNotServedOnTheApplicationPort() throws Exception {
+        assertThat(managementPort).isNotEqualTo(port);
+        assertThat(status(port, "/actuator/health")).isNotEqualTo(200);
     }
 
     @Test
     void everyOtherPathRequiresAToken() throws Exception {
-        assertThat(status("/api/units")).isEqualTo(401);
+        assertThat(status(port, "/api/units")).isEqualTo(401);
     }
 }
