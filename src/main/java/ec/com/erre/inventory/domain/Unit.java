@@ -44,6 +44,16 @@ public record Unit(
         this(code, name, dimension, baseFactor, false, true);
     }
 
+    /** The same unit with another name. Only the name and the state may change after creation. */
+    public Unit withName(String newName) {
+        return new Unit(code, newName, dimension, baseFactor, standard, active);
+    }
+
+    /** The same unit, active or inactive. Units are never deleted. */
+    public Unit withActive(boolean newActive) {
+        return new Unit(code, name, dimension, baseFactor, standard, newActive);
+    }
+
     public boolean isBase() {
         return baseFactor.compareTo(BigDecimal.ONE) == 0;
     }

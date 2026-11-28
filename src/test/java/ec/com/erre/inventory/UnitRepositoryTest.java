@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import ec.com.erre.inventory.domain.Dimension;
 import ec.com.erre.inventory.domain.Unit;
 import ec.com.erre.inventory.domain.port.UnitRepository;
+import ec.com.erre.inventory.domain.port.UnitSearch;
+import ec.com.erre.inventory.domain.port.UnitSort;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.util.List;
@@ -61,6 +63,53 @@ class UnitRepositoryTest {
                 .hasSize(12)
                 .allMatch(Unit::standard)
                 .allMatch(Unit::active);
+    }
+
+    private static UnitSearch search(Dimension dimension, String text, Boolean active) {
+        return new UnitSearch(dimension, text, active, 0, 20, UnitSort.CODE, true);
+    }
+
+    @Test
+    void searchesByDimension() {
+        var page = repository.search(search(Dimension.MASS, null, null));
+
+        assertThat(page.content())
+                .extracting(Unit::code)
+                .containsExactly("g", "kg", "lb", "mg", "oz");
+    }
+
+    @Test
+    void searchesCodeOrNameIgnoringCase() {
+        var page = repository.search(search(null, "LITRO", null));
+
+        assertThat(page.content()).extracting(Unit::code).containsExactlyInAnyOrder("l", "ml");
+    }
+
+    @Test
+    void searchesByState() {
+        repository.save(repository.findByCode("cup").orElseThrow().withActive(false));
+
+        assertThat(repository.search(search(null, null, false)).content())
+                .extracting(Unit::code)
+                .containsExactly("cup");
+        assertThat(repository.search(search(null, null, true)).totalElements()).isEqualTo(11);
+    }
+
+    @Test
+    void sortsAndPages() {
+        var secondPage =
+                repository.search(new UnitSearch(null, null, null, 1, 5, UnitSort.CODE, false));
+
+        assertThat(secondPage.totalElements()).isEqualTo(12);
+        assertThat(secondPage.totalPages()).isEqualTo(3);
+        assertThat(secondPage.content())
+                .extracting(Unit::code)
+                .containsExactly("mg", "lb", "l", "kg", "g");
+    }
+
+    @Test
+    void aSearchWithoutFiltersReturnsEveryUnit() {
+        assertThat(repository.search(UnitSearch.firstPage()).totalElements()).isEqualTo(12);
     }
 
     @Test
