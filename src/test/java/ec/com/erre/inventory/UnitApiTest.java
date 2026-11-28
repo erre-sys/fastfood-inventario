@@ -28,6 +28,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.WebApplicationContext;
+import org.springframework.web.filter.ForwardedHeaderFilter;
 
 /**
  * The units API end to end (security, validation, use cases, PostgreSQL), each response checked
@@ -53,26 +54,24 @@ class UnitApiTest {
     void setUp() {
         mvc =
                 MockMvcBuilders.webAppContextSetup(context)
+                        .addFilters(new ForwardedHeaderFilter())
                         .apply(SecurityMockMvcConfigurers.springSecurity())
                         .build();
     }
 
     private static MockHttpServletRequestBuilder create(String body) {
-        return post("/api/units")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body)
-                .with(csrf());
+        return post("/units").contentType(MediaType.APPLICATION_JSON).content(body).with(csrf());
     }
 
     private static MockHttpServletRequestBuilder change(String code, String body) {
-        return patch("/api/units/" + code).contentType(MERGE_PATCH).content(body).with(csrf());
+        return patch("/units/" + code).contentType(MERGE_PATCH).content(body).with(csrf());
     }
 
     // --- List -------------------------------------------------------------------------------
 
     @Test
     void anyRoleListsTheUnitsInPages() throws Exception {
-        mvc.perform(get("/api/units").with(cashier()))
+        mvc.perform(get("/units").with(cashier()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.page.totalElements").value(12))
                 .andExpect(jsonPath("$.page.size").value(20))
@@ -85,7 +84,7 @@ class UnitApiTest {
     @Test
     void listsFilteredSortedAndPaged() throws Exception {
         mvc.perform(
-                        get("/api/units")
+                        get("/units")
                                 .param("dimension", "MASS")
                                 .param("sort", "code,desc")
                                 .param("size", "2")
@@ -100,30 +99,26 @@ class UnitApiTest {
 
     @Test
     void searchesByTextAndState() throws Exception {
-        mvc.perform(
-                        get("/api/units")
-                                .param("text", "litro")
-                                .param("active", "true")
-                                .with(cashier()))
+        mvc.perform(get("/units").param("text", "litro").param("active", "true").with(cashier()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[*].code", contains("l", "ml")));
     }
 
     @Test
     void rejectsASortFieldOutsideTheContract() throws Exception {
-        mvc.perform(get("/api/units").param("sort", "baseFactor").with(cashier()))
+        mvc.perform(get("/units").param("sort", "baseFactor").with(cashier()))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.title").value("Datos no válidos"))
-                .andExpect(jsonPath("$.instance").value("/api/units"))
+                .andExpect(jsonPath("$.instance").value("/units"))
                 .andExpect(jsonPath("$.errors[0].field").value("sort"))
                 .andExpect(ApiContract.matches("Problem"));
     }
 
     @Test
     void rejectsAPageLargerThanTheMaximum() throws Exception {
-        mvc.perform(get("/api/units").param("size", "101").with(cashier()))
+        mvc.perform(get("/units").param("size", "101").with(cashier()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].field").value("size"))
                 .andExpect(jsonPath("$.errors[0].message").value("Debe estar entre 1 y 100."));
@@ -131,7 +126,7 @@ class UnitApiTest {
 
     @Test
     void rejectsAnUnknownDimension() throws Exception {
-        mvc.perform(get("/api/units").param("dimension", "LENGTH").with(cashier()))
+        mvc.perform(get("/units").param("dimension", "LENGTH").with(cashier()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("dimension"))
@@ -142,7 +137,7 @@ class UnitApiTest {
 
     @Test
     void getsAStandardUnitWithItsFactorAsText() throws Exception {
-        mvc.perform(get("/api/units/kg").with(cashier()))
+        mvc.perform(get("/units/kg").with(cashier()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("kg"))
                 .andExpect(jsonPath("$.name").value("Kilogramo"))
@@ -156,12 +151,12 @@ class UnitApiTest {
 
     @Test
     void aMissingUnitIsA404WithItsCode() throws Exception {
-        mvc.perform(get("/api/units/onza").with(cashier()))
+        mvc.perform(get("/units/onza").with(cashier()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("UNIT_NOT_FOUND"))
                 .andExpect(jsonPath("$.title").value("Unidad no encontrada"))
                 .andExpect(jsonPath("$.detail").value("No existe una unidad con el código «onza»."))
-                .andExpect(jsonPath("$.instance").value("/api/units/onza"))
+                .andExpect(jsonPath("$.instance").value("/units/onza"))
                 .andExpect(ApiContract.matches("Problem"));
     }
 
@@ -171,7 +166,7 @@ class UnitApiTest {
     void anAdminCreatesABusinessUnit() throws Exception {
         mvc.perform(create(PORTION).with(admin()))
                 .andExpect(status().isCreated())
-                .andExpect(header().string("Location", "/api/units/portion180"))
+                .andExpect(header().string("Location", "http://localhost/units/portion180"))
                 .andExpect(jsonPath("$.code").value("portion180"))
                 .andExpect(jsonPath("$.baseFactor").value("180"))
                 .andExpect(jsonPath("$.standard").value(false))
@@ -179,6 +174,27 @@ class UnitApiTest {
                 .andExpect(jsonPath("$.createdBy").value("eromero"))
                 .andExpect(jsonPath("$.updatedBy", nullValue()))
                 .andExpect(ApiContract.matches("Unit"));
+    }
+
+    @Test
+    void behindTheIngressTheUrlsKeepThePublicPrefix() throws Exception {
+        mvc.perform(
+                        create(PORTION)
+                                .header("X-Forwarded-Proto", "https")
+                                .header("X-Forwarded-Host", "app-erre.dev.erre.cloud")
+                                .header("X-Forwarded-Prefix", "/api/v1/inventario")
+                                .with(admin()))
+                .andExpect(status().isCreated())
+                .andExpect(
+                        header().string(
+                                        "Location",
+                                        "https://app-erre.dev.erre.cloud/api/v1/inventario/units/portion180"));
+        mvc.perform(
+                        get("/units/onza")
+                                .header("X-Forwarded-Prefix", "/api/v1/inventario")
+                                .with(cashier()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.instance").value("/api/v1/inventario/units/onza"));
     }
 
     @Test
@@ -311,7 +327,7 @@ class UnitApiTest {
     @Test
     void aPatchMustBeAMergePatch() throws Exception {
         mvc.perform(
-                        patch("/api/units/kg")
+                        patch("/units/kg")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("{\"name\": \"Kilo\"}")
                                 .with(csrf())

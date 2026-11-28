@@ -37,7 +37,7 @@ class ConversionApiTest {
     @Test
     void convertsWithinTheSameDimension() throws Exception {
         mvc.perform(
-                        get("/api/conversions")
+                        get("/conversions")
                                 .param("from", "kg")
                                 .param("to", "g")
                                 .param("value", "2.5")
@@ -53,7 +53,7 @@ class ConversionApiTest {
     @Test
     void differentDimensionsAreA422() throws Exception {
         mvc.perform(
-                        get("/api/conversions")
+                        get("/conversions")
                                 .param("from", "kg")
                                 .param("to", "ml")
                                 .param("value", "1")
@@ -69,7 +69,7 @@ class ConversionApiTest {
     @Test
     void anUnknownUnitIsA404() throws Exception {
         mvc.perform(
-                        get("/api/conversions")
+                        get("/conversions")
                                 .param("from", "kg")
                                 .param("to", "onza")
                                 .param("value", "1")
@@ -80,7 +80,7 @@ class ConversionApiTest {
 
     @Test
     void theValueIsRequired() throws Exception {
-        mvc.perform(get("/api/conversions").param("from", "kg").param("to", "g").with(cashier()))
+        mvc.perform(get("/conversions").param("from", "kg").param("to", "g").with(cashier()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].field").value("value"))
                 .andExpect(jsonPath("$.errors[0].message").value("Es obligatorio."))
@@ -90,7 +90,7 @@ class ConversionApiTest {
     @Test
     void aNegativeValueIsRejected() throws Exception {
         mvc.perform(
-                        get("/api/conversions")
+                        get("/conversions")
                                 .param("from", "kg")
                                 .param("to", "g")
                                 .param("value", "-1")

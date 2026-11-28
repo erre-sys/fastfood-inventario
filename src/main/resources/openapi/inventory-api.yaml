@@ -16,14 +16,17 @@ info:
     name: AGPL-3.0-only
     url: https://www.gnu.org/licenses/agpl-3.0.html
 servers:
-  - url: /
+  - url: /api/v1/inventario
+    description: |
+      Public path. The Ingress strips this prefix (Traefik StripPrefix), so the service itself
+      serves `/units` and `/conversions`.
 security:
   - bearerAuth: []
 tags:
   - name: units
     description: Units of measure and their conversions
 paths:
-  /api/units:
+  /units:
     get:
       tags: [units]
       operationId: listUnits
@@ -89,10 +92,11 @@ paths:
           description: Unit created
           headers:
             Location:
-              description: URL of the new unit
+              description: Absolute URL of the new unit, with the public prefix
               schema:
                 type: string
-                example: /api/units/portion180
+                format: uri
+                example: https://app-erre.dev.erre.cloud/api/v1/inventario/units/portion180
           content:
             application/json:
               schema:
@@ -114,9 +118,9 @@ paths:
                 title: La unidad ya existe
                 status: 409
                 detail: Ya existe una unidad con el código «portion180».
-                instance: /api/units
+                instance: /api/v1/inventario/units
                 code: UNIT_ALREADY_EXISTS
-  /api/units/{code}:
+  /units/{code}:
     parameters:
       - $ref: '#/components/parameters/UnitCode'
     get:
@@ -179,13 +183,13 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /api/conversions:
+  /conversions:
     get:
       tags: [units]
       operationId: convertQuantity
       summary: Convert a quantity between two units of the same dimension
       description: |
-        Requires `units:read`. A separate resource from `/api/units/{code}` so that no unit code can
+        Requires `units:read`. A separate resource from `/units/{code}` so that no unit code can
         collide with it. Inactive units can still be converted (historical records use them).
         The result is rounded half-up to 3 decimal places.
       parameters:
@@ -233,7 +237,7 @@ paths:
                 title: Conversión no válida
                 status: 422
                 detail: No se puede convertir kg (MASS) a ml (VOLUME).
-                instance: /api/conversions
+                instance: /api/v1/inventario/conversions
                 code: INVALID_CONVERSION
 components:
   securitySchemes:
@@ -276,7 +280,7 @@ components:
             title: Datos no válidos
             status: 400
             detail: Revisa los campos marcados.
-            instance: /api/units
+            instance: /api/v1/inventario/units
             code: VALIDATION_FAILED
             errors:
               - field: baseFactor
@@ -302,7 +306,7 @@ components:
             title: Unidad no encontrada
             status: 404
             detail: No existe una unidad con el código «onza».
-            instance: /api/units/onza
+            instance: /api/v1/inventario/units/onza
             code: UNIT_NOT_FOUND
   schemas:
     Dimension:

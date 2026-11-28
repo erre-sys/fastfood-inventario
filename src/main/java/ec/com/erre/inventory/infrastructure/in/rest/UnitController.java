@@ -10,7 +10,6 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
-import java.net.URI;
 import java.util.Locale;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -22,10 +21,14 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-/** Units of measure: {@code /api/units}. Each operation checks its permission. */
+/**
+ * Units of measure: {@code /units}, public as {@code /api/v1/inventario/units} (the Ingress strips
+ * the prefix). Each operation checks its permission.
+ */
 @RestController
-@RequestMapping("/api/units")
+@RequestMapping("/units")
 public class UnitController {
 
     static final String MERGE_PATCH_JSON = "application/merge-patch+json";
@@ -75,8 +78,12 @@ public class UnitController {
     @PreAuthorize(CAN_CREATE)
     public ResponseEntity<UnitResponse> create(@Valid @RequestBody UnitCreateRequest request) {
         var created = units.create(request.toNewUnit());
-        return ResponseEntity.created(URI.create("/api/units/" + created.code()))
-                .body(UnitResponse.from(created));
+        var location =
+                ServletUriComponentsBuilder.fromCurrentRequest()
+                        .path("/{code}")
+                        .buildAndExpand(created.code())
+                        .toUri();
+        return ResponseEntity.created(location).body(UnitResponse.from(created));
     }
 
     @PatchMapping(path = "/{code}", consumes = MERGE_PATCH_JSON)

@@ -10,8 +10,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Conversions between units: {@code /api/conversions}. A resource of its own, so no unit code can
- * collide with it.
+ * Conversions between units: {@code /conversions}, public as {@code
+ * /api/v1/inventario/conversions}. A resource of its own, so no unit code can collide with it.
  */
 @RestController
 public class ConversionController {
@@ -22,7 +22,7 @@ public class ConversionController {
         this.units = units;
     }
 
-    @GetMapping("/api/conversions")
+    @GetMapping("/conversions")
     @PreAuthorize("hasAuthority('" + Permissions.UNITS_READ + "')")
     public ConversionResponse convert(
             @RequestParam("from")
